@@ -189,7 +189,7 @@ def seed_sample_packages():
         conn.close()
         return
 
-    carriers = ["USPS", "UPS", "FedEx", "Amazon", "DHL"]
+    carriers = [ "Amazon", "DHL", "FedEx", "Walmart", "USPS", "UPS",]
     packages = []
     today = datetime.now()
 
