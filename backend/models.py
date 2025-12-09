@@ -112,3 +112,34 @@ class HistorySearchRequest(BaseModel):
     """Request model for history search."""
     name: Optional[str] = None
     unit: Optional[int] = None
+
+
+# ============================================================
+# NEW: RESIDENT PORTAL MODELS
+# ============================================================
+
+class ResidentLoginRequest(BaseModel):
+    """Request model for resident login (3-factor match)."""
+    full_name: str
+    email: str
+    unit_number: int
+
+
+class ResidentLoginResponse(BaseModel):
+    """Response for resident login."""
+    success: bool
+    message: str
+    resident: Optional[Resident] = None
+
+
+class StaffRegisterRequest(BaseModel):
+    """Request model for creating new staff."""
+    username: str
+    password: str
+
+
+class ResidentCreateRequest(BaseModel):
+    """Request model for creating a new resident."""
+    full_name: str
+    email: str
+    unit_number: int
