@@ -18,16 +18,17 @@ from database.connection import get_connection
 def get_staff_by_username(username: str) -> Optional[sqlite3.Row]:
     """
     Fetch a staff member by username.
-    
+
     Args:
         username: The staff username to look up.
-    
+
     Returns:
         sqlite3.Row with staff data or None if not found.
     """
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM StaffLogin WHERE staff_username = ?", (username,))
+    cursor.execute(
+        "SELECT * FROM StaffLogin WHERE staff_username = ?", (username,))
     result = cursor.fetchone()
     conn.close()
     return result
@@ -40,10 +41,10 @@ def get_staff_by_username(username: str) -> Optional[sqlite3.Row]:
 def get_resident_by_id(resident_id: int) -> Optional[sqlite3.Row]:
     """
     Fetch a resident by ID.
-    
+
     Args:
         resident_id: The resident ID to look up.
-    
+
     Returns:
         sqlite3.Row with resident data or None if not found.
     """
@@ -58,7 +59,7 @@ def get_resident_by_id(resident_id: int) -> Optional[sqlite3.Row]:
 def get_all_residents() -> List[sqlite3.Row]:
     """
     Fetch all residents.
-    
+
     Returns:
         List of sqlite3.Row with all resident data.
     """
@@ -73,10 +74,10 @@ def get_all_residents() -> List[sqlite3.Row]:
 def search_residents(query: str) -> List[sqlite3.Row]:
     """
     Search residents by name (fuzzy match).
-    
+
     Args:
         query: The search string.
-    
+
     Returns:
         List of matching residents.
     """
@@ -98,12 +99,12 @@ def search_residents(query: str) -> List[sqlite3.Row]:
 def create_package(resident_id: int, carrier: str, delivery_date: str) -> int:
     """
     Create a new package record.
-    
+
     Args:
         resident_id: The resident ID to associate with the package.
         carrier: The carrier name (UPS, FedEx, etc.).
         delivery_date: The delivery date string.
-    
+
     Returns:
         The package_id of the newly created package.
     """
@@ -125,7 +126,7 @@ def create_package(resident_id: int, carrier: str, delivery_date: str) -> int:
 def get_pending_packages() -> List[sqlite3.Row]:
     """
     Fetch all packages with 'Pending' status, joined with resident info.
-    
+
     Returns:
         List of pending packages with resident name and unit.
     """
@@ -148,10 +149,10 @@ def get_pending_packages() -> List[sqlite3.Row]:
 def mark_package_picked_up(package_id: int) -> bool:
     """
     Update a package status to 'PickedUp'.
-    
+
     Args:
         package_id: The package ID to update.
-    
+
     Returns:
         True if update was successful, False otherwise.
     """
@@ -170,16 +171,17 @@ def mark_package_picked_up(package_id: int) -> bool:
 def get_package_by_id(package_id: int) -> Optional[sqlite3.Row]:
     """
     Fetch a package by ID.
-    
+
     Args:
         package_id: The package ID to look up.
-    
+
     Returns:
         sqlite3.Row with package data or None if not found.
     """
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM Packages WHERE package_id = ?", (package_id,))
+    cursor.execute(
+        "SELECT * FROM Packages WHERE package_id = ?", (package_id,))
     result = cursor.fetchone()
     conn.close()
     return result
@@ -192,12 +194,12 @@ def get_package_by_id(package_id: int) -> Optional[sqlite3.Row]:
 def log_unknown_package(name_on_label: str, carrier: str, delivery_date: str) -> int:
     """
     Log a package with no identified resident.
-    
+
     Args:
         name_on_label: The name written on the package label.
         carrier: The carrier name.
         delivery_date: The delivery date string.
-    
+
     Returns:
         The unknown_id of the newly created record.
     """
@@ -219,7 +221,7 @@ def log_unknown_package(name_on_label: str, carrier: str, delivery_date: str) ->
 def get_unknown_packages() -> List[sqlite3.Row]:
     """
     Fetch all unassigned unknown packages.
-    
+
     Returns:
         List of unknown packages that haven't been assigned to a resident.
     """
@@ -239,11 +241,11 @@ def assign_unknown_to_resident(unknown_id: int, resident_id: int) -> bool:
     This:
     1. Updates the UnknownPackages record with the assigned_resident_id.
     2. Creates a new Package record for the resident.
-    
+
     Args:
         unknown_id: The unknown package ID.
         resident_id: The resident ID to assign to.
-    
+
     Returns:
         True if successful, False otherwise.
     """
@@ -251,7 +253,8 @@ def assign_unknown_to_resident(unknown_id: int, resident_id: int) -> bool:
     cursor = conn.cursor()
 
     # Get the unknown package info
-    cursor.execute("SELECT * FROM UnknownPackages WHERE unknown_id = ?", (unknown_id,))
+    cursor.execute(
+        "SELECT * FROM UnknownPackages WHERE unknown_id = ?", (unknown_id,))
     unknown_pkg = cursor.fetchone()
 
     if not unknown_pkg:
@@ -285,11 +288,11 @@ def assign_unknown_to_resident(unknown_id: int, resident_id: int) -> bool:
 def search_history(name_query: str = None, unit_query: int = None) -> List[sqlite3.Row]:
     """
     Search package history by resident name or unit number.
-    
+
     Args:
         name_query: Optional name to search for (fuzzy match).
         unit_query: Optional unit number to filter by.
-    
+
     Returns:
         List of packages matching the criteria.
     """
@@ -318,3 +321,133 @@ def search_history(name_query: str = None, unit_query: int = None) -> List[sqlit
     results = cursor.fetchall()
     conn.close()
     return results
+
+
+# ============================================================
+# NEW: RESIDENT AUTH & PORTAL SUPPORT
+# ============================================================
+
+def validate_resident_login(full_name: str, email: str, unit_number: int) -> Optional[sqlite3.Row]:
+    """
+    Validate resident credentials (Name + Email + Unit).
+
+    Args:
+        full_name: Full name of resident.
+        email: Email address.
+        unit_number: Unit number.
+
+    Returns:
+        sqlite3.Row with resident data if valid, None otherwise.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT * FROM Residents 
+        WHERE full_name = ? AND email = ? AND unit_number = ?
+        """,
+        (full_name, email, unit_number)
+    )
+    result = cursor.fetchone()
+    conn.close()
+    return result
+
+
+def get_resident_packages(resident_id: int) -> List[sqlite3.Row]:
+    """
+    Get all packages (Pending and History) for a specific resident.
+
+    Args:
+        resident_id: The ID of the resident.
+
+    Returns:
+        List of packages for that resident.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT p.*, r.full_name, r.unit_number
+        FROM Packages p
+        JOIN Residents r ON p.resident_id = r.id
+        WHERE p.resident_id = ?
+        ORDER BY p.delivery_date DESC
+        """,
+        (resident_id,)
+    )
+    results = cursor.fetchall()
+    conn.close()
+    return results
+
+
+# ============================================================
+# NEW: STAFF MANAGEMENT
+# ============================================================
+
+def create_staff_user(username: str, password: str) -> bool:
+    """
+    Create a new staff account.
+
+    Args:
+        username: Desired username.
+        password: Password.
+
+    Returns:
+        True if successful, False if username exists or error.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            "INSERT INTO StaffLogin (staff_username, staff_password) VALUES (?, ?)",
+            (username, password)
+        )
+        conn.commit()
+        success = True
+    except sqlite3.IntegrityError:
+        # Username already exists
+        success = False
+    except Exception as e:
+        print(f"[Error] create_staff_user: {e}")
+        success = False
+    finally:
+        conn.close()
+
+    return success
+
+
+# ============================================================
+# RESIDENT MANAGEMENT
+# ============================================================
+
+def create_resident(full_name: str, email: str, unit_number: int) -> Optional[int]:
+    """
+    Create a new resident.
+
+    Args:
+        full_name: Full name of the resident.
+        email: Email address.
+        unit_number: Unit number.
+
+    Returns:
+        The ID of the newly created resident, or None if failed.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            "INSERT INTO Residents (full_name, email, unit_number) VALUES (?, ?, ?)",
+            (full_name, email, unit_number)
+        )
+        conn.commit()
+        resident_id = cursor.lastrowid
+        return resident_id
+    except sqlite3.IntegrityError:
+        return None
+    except Exception as e:
+        print(f"[Error] create_resident: {e}")
+        return None
+    finally:
+        conn.close()
