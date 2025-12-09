@@ -5,6 +5,8 @@ This is the Business Logic Tier (Tier 2).
 It handles all API routes and orchestrates the application logic.
 """
 
+from backend.models import ResidentCreateRequest
+from backend.models import ResidentLoginRequest, ResidentLoginResponse, StaffRegisterRequest
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
@@ -51,17 +53,17 @@ app.add_middleware(
 def login(request: LoginRequest):
     """
     Authenticate a staff member.
-    
+
     Validates credentials against the StaffLogin table.
     """
     staff = repository.get_staff_by_username(request.username)
-    
+
     if not staff:
         return LoginResponse(success=False, message="Invalid username")
-    
+
     if staff['staff_password'] != request.password:
         return LoginResponse(success=False, message="Invalid password")
-    
+
     return LoginResponse(
         success=True,
         message="Login successful",
@@ -77,7 +79,7 @@ def login(request: LoginRequest):
 def get_residents():
     """
     Get all residents.
-    
+
     Returns a list of all residents for dropdown menus.
     """
     residents = repository.get_all_residents()
@@ -97,7 +99,7 @@ def get_residents():
 def search_residents(query: str):
     """
     Search residents by name.
-    
+
     Args:
         query: Search string to match against resident names.
     """
@@ -122,14 +124,14 @@ def search_residents(query: str):
 def create_package(request: PackageCreate):
     """
     Log a new package delivery.
-    
+
     Creates a package record and sends email notification to the resident.
     """
     # Get resident info
     resident = repository.get_resident_by_id(request.resident_id)
     if not resident:
         raise HTTPException(status_code=404, detail="Resident not found")
-    
+
     # Create package record
     delivery_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     package_id = repository.create_package(
@@ -137,10 +139,10 @@ def create_package(request: PackageCreate):
         carrier=request.carrier,
         delivery_date=delivery_date
     )
-    
+
     # CRITICAL: Send email notification
     email_sent = send_notification(resident['email'])
-    
+
     return {
         "success": True,
         "package_id": package_id,
@@ -153,7 +155,7 @@ def create_package(request: PackageCreate):
 def get_pending_packages():
     """
     Get all packages with 'Pending' status.
-    
+
     Returns packages that haven't been picked up yet.
     """
     packages = repository.get_pending_packages()
@@ -176,14 +178,14 @@ def get_pending_packages():
 def pickup_package(package_id: int):
     """
     Mark a package as picked up.
-    
+
     Updates the package status to 'PickedUp'.
     """
     success = repository.mark_package_picked_up(package_id)
-    
+
     if not success:
         raise HTTPException(status_code=404, detail="Package not found")
-    
+
     return PickupResponse(
         success=True,
         message=f"Package {package_id} marked as picked up"
@@ -205,7 +207,7 @@ def log_unknown_package(request: UnknownPackageCreate):
         carrier=request.carrier,
         delivery_date=delivery_date
     )
-    
+
     return {
         "success": True,
         "unknown_id": unknown_id,
@@ -236,25 +238,26 @@ def get_unknown_packages():
 def assign_unknown_package(request: AssignUnknownRequest):
     """
     Assign an unknown package to a resident.
-    
+
     Creates a proper Package record and marks the unknown package as resolved.
     """
     # Get resident info for email
     resident = repository.get_resident_by_id(request.resident_id)
     if not resident:
         raise HTTPException(status_code=404, detail="Resident not found")
-    
+
     success = repository.assign_unknown_to_resident(
         unknown_id=request.unknown_id,
         resident_id=request.resident_id
     )
-    
+
     if not success:
-        raise HTTPException(status_code=404, detail="Unknown package not found")
-    
+        raise HTTPException(
+            status_code=404, detail="Unknown package not found")
+
     # Send email notification
     email_sent = send_notification(resident['email'])
-    
+
     return {
         "success": True,
         "message": f"Package assigned to {resident['full_name']}",
@@ -295,3 +298,99 @@ def search_history(name: Optional[str] = None, unit: Optional[int] = None):
 def root():
     """Health check endpoint."""
     return {"status": "ok", "message": "Mailroom Management API is running"}
+
+
+# ============================================================
+# NEW: RESIDENT PORTAL ENDPOINTS
+# ============================================================
+
+
+@app.post("/resident/login", response_model=ResidentLoginResponse)
+def resident_login(request: ResidentLoginRequest):
+    """
+    Authenticate a resident using Name + Email + Unit.
+    """
+    resident = repository.validate_resident_login(
+        full_name=request.full_name,
+        email=request.email,
+        unit_number=request.unit_number
+    )
+
+    if not resident:
+        return ResidentLoginResponse(success=False, message="Invalid credentials. Verify your name, email, and unit number are correct.")
+
+    return ResidentLoginResponse(
+        success=True,
+        message="Welcome back!",
+        resident=Resident(
+            id=resident['id'],
+            full_name=resident['full_name'],
+            email=resident['email'],
+            unit_number=resident['unit_number']
+        )
+    )
+
+
+@app.get("/packages/resident/{resident_id}", response_model=PackageList)
+def get_resident_packages(resident_id: int):
+    """
+    Get all packages for a specific resident (My Packages).
+    """
+    packages = repository.get_resident_packages(resident_id)
+    return PackageList(
+        packages=[
+            Package(
+                package_id=p['package_id'],
+                resident_id=p['resident_id'],
+                carrier=p['carrier'],
+                delivery_date=p['delivery_date'],
+                status=p['status'],
+                full_name=p['full_name'],
+                unit_number=p['unit_number']
+            ) for p in packages
+        ]
+    )
+
+
+# ============================================================
+# NEW: STAFF MANAGEMENT ENDPOINT
+# ============================================================
+
+@app.post("/staff/register")
+def register_staff(request: StaffRegisterRequest):
+    """
+    Create a new staff account.
+    """
+    # Simple check: Only allow if username doesn't exist (handled by Repo)
+    success = repository.create_staff_user(request.username, request.password)
+
+    if not success:
+        return {"success": False, "message": "Username already exists or error occurred."}
+
+    return {"success": True, "message": f"Staff user '{request.username}' created successfully."}
+
+
+# ============================================================
+# RESIDENT MANAGEMENT ENDPOINT
+# ============================================================
+
+
+@app.post("/residents/create")
+def create_resident(request: ResidentCreateRequest):
+    """
+    Create a new resident.
+    """
+    resident_id = repository.create_resident(
+        full_name=request.full_name,
+        email=request.email,
+        unit_number=request.unit_number
+    )
+
+    if not resident_id:
+        return {"success": False, "message": "Failed to create resident. Email or unit may already exist."}
+
+    return {
+        "success": True,
+        "message": f"Resident '{request.full_name}' created successfully.",
+        "resident_id": resident_id
+    }
